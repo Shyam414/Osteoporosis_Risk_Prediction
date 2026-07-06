@@ -40,6 +40,19 @@ async function register(email, password) {
   };
 }
 
+async function logout() {
+  const token = localStorage.getItem("access_token");
+
+  await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  localStorage.removeItem("access_token");
+}
+
 async function forgotPassword(email) {
   const res = await fetch(`${API_BASE}/auth/forgot-password`, {
     method: 'POST',

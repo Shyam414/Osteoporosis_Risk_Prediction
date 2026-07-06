@@ -31,12 +31,19 @@
         document.getElementById("navbar").innerHTML = html;
 
         const logoutBtn = document.getElementById("logout-btn");
-        if (logoutBtn) {
-          logoutBtn.addEventListener("click", () => {
-            localStorage.clear();
+
+        logoutBtn.addEventListener("click", async (e) => {
+          e.preventDefault();
+
+          try {
+            await logout();
+          } catch (err) {
+            console.error(err);
+          } finally {
+            localStorage.removeItem("access_token");
             window.location.href = "login.html";
-          });
-        }
+          }
+        });
       });
 
     // Load dashboard records

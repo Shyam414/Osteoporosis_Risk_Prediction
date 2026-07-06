@@ -24,7 +24,7 @@
     </form>
   </main>
 
-  <script type="module">
+  <script>
     const token = localStorage.getItem("access_token");
 
     // AUTH GUARD
@@ -37,11 +37,20 @@
     document.getElementById('navbar').innerHTML = navbarHTML;
 
     // Logout
-    const logoutBtn = document.getElementById('logout-btn');
+    const logoutBtn = document.getElementById("logout-btn");
+
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('access_token');
-        window.location.href = 'index.html';
+      logoutBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+
+        try {
+          await logout();   // calls POST /auth/logout
+        } catch (err) {
+          console.error("Logout failed:", err);
+        } finally {
+          localStorage.removeItem("access_token");
+          window.location.href = "login.html";
+        }
       });
     }
 
