@@ -8,6 +8,7 @@
   <script src="js/api.js"></script>
 </head>
 <body>
+
   <div id="navbar"></div>
 
   <main class="container">
@@ -15,8 +16,8 @@
     <section id="history"></section>
   </main>
 
-  <!-- NORMAL SCRIPT (NOT MODULE) -->
   <script>
+
     const token = localStorage.getItem("access_token");
 
     // AUTH GUARD
@@ -24,79 +25,124 @@
       window.location.href = "login.html";
     }
 
-    // Load navbar
+    // -------------------------
+    // Load Navbar
+    // -------------------------
     fetch("_navbar.html")
       .then(r => r.text())
       .then(html => {
+
         document.getElementById("navbar").innerHTML = html;
 
         const logoutBtn = document.getElementById("logout-btn");
 
-        logoutBtn.addEventListener("click", async (e) => {
-          e.preventDefault();
+        if (logoutBtn) {
 
-          try {
-            await logout();
-          } catch (err) {
-            console.error(err);
-          } finally {
-            localStorage.removeItem("access_token");
-            window.location.href = "login.html";
-          }
-        });
+          logoutBtn.addEventListener("click", async (e) => {
+
+            e.preventDefault();
+
+            try {
+              await logout();
+            }
+            catch (err) {
+              console.error(err);
+            }
+            finally {
+              localStorage.removeItem("access_token");
+              window.location.href = "login.html";
+            }
+
+          });
+
+        }
+
       });
 
-    // Load dashboard records
+    // -------------------------
+    // Load Dashboard
+    // -------------------------
     async function loadDashboard() {
+
       try {
+
         const data = await getDashboard();
-        const section = document.getElementById("history");
+
+        const section =
+          document.getElementById("history");
 
         if (data.records && data.records.length) {
-          const cards = await Promise.all(
-            data.records.map(async (rec) => {
-              const res = await fetch(
-                `${API_BASE}/predict/file/${rec.file_id}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }
-              );
 
-              const imgUrl = res.ok
-                ? URL.createObjectURL(await res.blob())
-                : "placeholder.png";
+          const cards = data.records.map((rec) => {
 
-              return `
-                <div class="card">
-                  <img src="${imgUrl}" alt="X-ray">
-                  <p>${rec.filename} - ${rec.prediction}</p>
-                  <div class="probability-container">
-                    <div class="probability-fill ${
+            const imgUrl =
+              rec.image_url || "placeholder.png";
+
+            return `
+
+              <div class="card">
+
+                <img
+                  src="${imgUrl}"
+                  alt="X-ray"
+                >
+
+                <p>
+                  ${rec.filename}
+                </p>
+
+                <p>
+                  ${rec.prediction}
+                </p>
+
+                <div class="probability-container">
+
+                  <div
+                    class="probability-fill ${
                       rec.prediction.toLowerCase() === "positive"
                         ? "positive"
                         : "negative"
-                    }" style="width:${rec.probability}%;">
-                      ${rec.probability}%
-                    </div>
+                    }"
+                    style="width:${rec.probability}%"
+                  >
+
+                    ${rec.probability}%
+
                   </div>
+
                 </div>
-              `;
-            })
-          );
+
+              </div>
+
+            `;
+
+          });
 
           section.innerHTML = cards.join("");
-        } else {
-          section.innerHTML = "<p>No history yet.</p>";
+
         }
-      } catch (err) {
-        document.getElementById("history").innerHTML =
-          "<p>Error loading dashboard</p>";
+        else {
+
+          section.innerHTML =
+            "<p>No history yet.</p>";
+
+        }
+
       }
+      catch (err) {
+
+        console.error(err);
+
+        document.getElementById("history").innerHTML =
+          "<p>Error loading dashboard.</p>";
+
+      }
+
     }
 
     loadDashboard();
+
   </script>
+
 </body>
 </html>

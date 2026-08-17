@@ -1,10 +1,11 @@
 //api.js
+//python -m http.server 5500
 const API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5000"
     : "https://osteoporosis-risk-prediction.onrender.com";
   
-//const API_BASE = "http://localhost:5000";
+// const API_BASE = "http://localhost:5000";
 
 // AUTH
 async function login(email, password) {

@@ -1,153 +1,240 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Prediction Result</title>
-  <link rel="stylesheet" href="css/result.css" />
-  <script src="js/api.js" defer></script>
+
+  <link rel="stylesheet" href="css/result.css">
+  <script src="js/api.js"></script>
 </head>
 <body>
-  <!-- Navbar -->
-  <header id="navbar"></header>
 
-  <main class="container">
-    <!-- Status / Error Message -->
-    <p id="result-message" class="result-message"></p>
+<header id="navbar"></header>
 
-    <!-- Prediction Section -->
-    <section id="result" class="result-box"></section>
+<main class="container">
 
-    <!-- History Section -->
-    <section class="history-section">
-      <h1>Previous Predictions</h1>
-      <div id="history" class="history-grid"></div>
-    </section>
-  </main>
+  <p id="result-message" class="result-message"></p>
 
-  <script>
-    const token = localStorage.getItem("access_token");
+  <section id="result" class="result-box"></section>
 
-    // AUTH GUARD
-    if (!token) {
-      window.location.href = "login.html";
-    }
+  <section class="history-section">
 
-    const messageEl = document.getElementById("result-message");
+    <h1>Previous Predictions</h1>
 
-    async function initPage() {
-      try {
-        // Load navbar
-        const navbarHTML = await fetch("_navbar.html").then(r => r.text());
-        document.getElementById("navbar").innerHTML = navbarHTML;
+    <div id="history" class="history-grid"></div>
 
-        // Logout
-        const logoutBtn = document.getElementById("logout-btn");
+  </section>
 
-    if (logoutBtn) {
-      logoutBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
+</main>
 
-        try {
-          await logout();   // calls POST /auth/logout
-        } catch (err) {
-          console.error("Logout failed:", err);
-        } finally {
-          localStorage.removeItem("access_token");
-          window.location.href = "login.html";
+<script>
+
+const token = localStorage.getItem("access_token");
+
+if (!token) {
+    window.location.href = "login.html";
+}
+
+const messageEl =
+    document.getElementById("result-message");
+
+async function initPage() {
+
+    try {
+
+        // ------------------------
+        // Navbar
+        // ------------------------
+
+        const navbarHTML =
+            await fetch("_navbar.html")
+            .then(r => r.text());
+
+        document.getElementById("navbar").innerHTML =
+            navbarHTML;
+
+        const logoutBtn =
+            document.getElementById("logout-btn");
+
+        if (logoutBtn) {
+
+            logoutBtn.addEventListener("click", async e => {
+
+                e.preventDefault();
+
+                try {
+                    await logout();
+                }
+                finally {
+
+                    localStorage.removeItem("access_token");
+
+                    window.location.href =
+                        "login.html";
+
+                }
+
+            });
+
         }
-      });
-    }
 
-        const token = localStorage.getItem("access_token");
-        if (!token) {
-          messageEl.style.color = "red";
-          messageEl.textContent = "Session expired. Please login again.";
-          setTimeout(() => (window.location.href = "login.html"), 1200);
-          return;
-        }
+        // ------------------------
+        // Latest Prediction
+        // ------------------------
 
-        // Load latest prediction
-        const params = new URLSearchParams(window.location.search);
-        const file_id = params.get("file_id");
+        const params =
+            new URLSearchParams(window.location.search);
 
-        if (file_id) {
-          const res = await fetch(`${API_BASE}/predict/file/${file_id}/meta`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+        const job_id =
+            params.get("job_id");
 
-          if (!res.ok) throw new Error("Failed to load prediction");
+        if (job_id) {
 
-          const data = await res.json();
+            const res = await fetch(
 
-          const imgRes = await fetch(`${API_BASE}/predict/file/${file_id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+                `${API_BASE}/predict/result/${job_id}`,
 
-          const imgUrl = imgRes.ok
-            ? URL.createObjectURL(await imgRes.blob())
-            : "placeholder.png";
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
 
-          document.getElementById("result").innerHTML = `
-            <h2>Prediction Result</h2>
-            <div class="prediction-content">
-              <img src="${imgUrl}" alt="X-ray" class="prediction-img" />
-              <div class="prediction-info">
-                <p class="filename">${data.filename}</p>
-                <p class="prediction">
-                  <strong>${data.prediction}</strong>
-                  <span>(${data.probability}%)</span>
-                </p>
-                <div class="probability-container">
-                  <div class="probability-fill ${
-                    data.prediction === "Positive" ? "positive" : "negative"
-                  }" style="width:${data.probability}%;">
-                    ${data.probability}%
-                  </div>
+            );
+
+            if (!res.ok)
+                throw new Error("Prediction not found");
+
+            const data =
+                await res.json();
+
+            const imgUrl =
+                data.image_url || "placeholder.png";
+
+            document.getElementById("result").innerHTML = `
+
+                <h2>Prediction Result</h2>
+
+                <div class="prediction-content">
+
+                    <img
+                        src="${imgUrl}"
+                        class="prediction-img"
+                        alt="X-Ray"
+                    >
+
+                    <div class="prediction-info">
+
+                        <p class="filename">
+                            ${data.filename}
+                        </p>
+
+                        <p class="prediction">
+
+                            <strong>
+                                ${data.prediction}
+                            </strong>
+
+                            <span>
+                                (${data.probability}%)
+                            </span>
+
+                        </p>
+
+                        <div class="probability-container">
+
+                            <div
+                                class="probability-fill ${
+                                    data.prediction === "Positive"
+                                    ? "positive"
+                                    : "negative"
+                                }"
+                                style="width:${data.probability}%"
+                            >
+
+                                ${data.probability}%
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
                 </div>
-              </div>
-            </div>
-          `;
+
+            `;
+
         }
 
-        // Load history
-        const historyData = await getDashboard();
-        const historySection = document.getElementById("history");
+        // ------------------------
+        // History
+        // ------------------------
 
-        if (historyData.records && historyData.records.length) {
-          const cards = await Promise.all(
-            historyData.records.map(async (rec) => {
-              const imgRes = await fetch(`${API_BASE}/predict/file/${rec.file_id}`, {
-                headers: { Authorization: `Bearer ${token}` },
-              });
+        const history =
+            await getDashboard();
 
-              const imgUrl = imgRes.ok
-                ? URL.createObjectURL(await imgRes.blob())
-                : "placeholder.png";
+        const historySection =
+            document.getElementById("history");
 
-              return `
+        if (history.records &&
+            history.records.length) {
+
+            const cards =
+                history.records.map(rec => `
+
                 <div class="card">
-                  <img src="${imgUrl}" alt="X-ray" />
-                  <p class="filename">${rec.filename}</p>
-                  <p class="prediction">
-                    ${rec.prediction} (${rec.probability}%)
-                  </p>
+
+                    <img
+                        src="${rec.image_url || "placeholder.png"}"
+                        alt="X-Ray"
+                    >
+
+                    <p class="filename">
+
+                        ${rec.filename}
+
+                    </p>
+
+                    <p class="prediction">
+
+                        ${rec.prediction}
+                        (${rec.probability}%)
+
+                    </p>
+
                 </div>
-              `;
-            })
-          );
-          historySection.innerHTML = cards.join("");
-        } else {
-          historySection.innerHTML = '<p class="empty">No history yet.</p>';
+
+            `);
+
+            historySection.innerHTML =
+                cards.join("");
+
+        }
+        else {
+
+            historySection.innerHTML =
+                "<p class='empty'>No history yet.</p>";
+
         }
 
-      } catch (err) {
+    }
+    catch (err) {
+
+        console.error(err);
+
         messageEl.style.color = "red";
-        messageEl.textContent = err.message || "Failed to load results.";
-      }
+
+        messageEl.textContent =
+            err.message || "Failed to load prediction.";
+
     }
 
-    initPage();
-  </script>
+}
+
+initPage();
+
+</script>
+
 </body>
 </html>
