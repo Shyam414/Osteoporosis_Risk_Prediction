@@ -83,6 +83,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                 } finally {
 
                     localStorage.removeItem("access_token");
+                    localStorage.removeItem("role");
                     window.location.href = "login.html";
 
                 }

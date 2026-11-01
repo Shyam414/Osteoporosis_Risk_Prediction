@@ -111,7 +111,7 @@ async function uploadFile(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_BASE}/predict/`, {
+  const res = await fetch(`${API_BASE}/predict/upload`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`

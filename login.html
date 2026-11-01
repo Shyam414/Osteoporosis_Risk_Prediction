@@ -67,6 +67,7 @@
       // SUCCESS
       if (res.ok && res.access_token) {
         localStorage.setItem("access_token", res.access_token);
+        localStorage.setItem("role", res.role);
         messageEl.style.color = "green";
         messageEl.textContent = res.msg || "Login successful";
 
