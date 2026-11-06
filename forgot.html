@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,13 +8,16 @@
   <link rel="stylesheet" href="css/login.css" />
   <script src="js/api.js" defer></script>
 </head>
+
 <body>
   <div class="auth-wrapper">
     <div class="auth-container">
+
       <h2>Forgot Password</h2>
       <p class="subtitle">Enter your email to receive a reset link</p>
 
       <form id="forgot-form">
+
         <label for="email">Email</label>
         <input
           type="email"
@@ -23,43 +27,70 @@
           required
         />
 
-        <button type="submit">Send Reset Link</button>
+        <button type="submit" id="submit-btn">
+          Send Reset Link
+        </button>
 
-        <p id="forgot-message" class="login-message"></p>
+        <p
+          id="forgot-message"
+          class="login-message"
+          role="status"
+          aria-live="polite"
+        ></p>
+
       </form>
 
       <div class="links">
         <span>•</span>
         <a href="login.html">Back to Login</a>
       </div>
+
     </div>
   </div>
 
   <script>
+    "use strict";
+
     const form = document.getElementById("forgot-form");
     const messageEl = document.getElementById("forgot-message");
+    const submitBtn = document.getElementById("submit-btn");
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
+      if (submitBtn.disabled) return;
+
       messageEl.textContent = "";
       messageEl.style.color = "red";
 
-      const email = form.email.value;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Sending...";
 
-      // use API function (clean separation)
-      const res = await forgotPassword(email);
+      const email = form.email.value.trim().toLowerCase();
 
-      // SUCCESS
-      if (res.ok) {
-        messageEl.style.color = "green";
+      try {
+        // Reuse forgotPassword() from api.js
+        const res = await forgotPassword(email);
+
+        if (res.ok) {
+          messageEl.style.color = "green";
+          messageEl.textContent =
+            res.msg || "Password reset link sent. Check your email.";
+        } else {
+          messageEl.textContent =
+            res.msg || "Failed to send reset link.";
+        }
+
+      } catch (error) {
+        console.error("Forgot password error:", error);
+
         messageEl.textContent =
-          res.msg || "Password reset link sent. Check your email.";
-        return;
-      }
+          "Unable to connect to server. Please try again.";
 
-      // ERROR
-      messageEl.textContent = res.msg || "Failed to send reset link";
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Send Reset Link";
+      }
     });
   </script>
 </body>

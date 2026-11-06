@@ -4,183 +4,232 @@ const API_BASE =
   window.location.hostname === "localhost"
     ? "http://localhost:5000"
     : "https://osteoporosis-risk-prediction.onrender.com";
-  
+
 // const API_BASE = "http://localhost:5000";
 
+function getToken() {
+  const token = localStorage.getItem("access_token");
+  if (!token) throw new Error("Session expired. Please login again.");
+  return token;
+}
+
+function clearSession() {
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  localStorage.removeItem("role");
+  window.location.href = "login.html";
+}
+
+let refreshPromise = null;
+async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (!refreshToken) throw new Error("No refresh token");
+
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${refreshToken}`
+        }
+      });
+
+      if (!res.ok) throw new Error("Refresh token expired");
+
+      const data = await res.json();
+
+      if (!data.access_token) {
+        throw new Error("New access token missing");
+      }
+
+      localStorage.setItem("access_token", data.access_token);
+      return data.access_token;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
+}
+
+// COMMON AUTHENTICATED REQUEST
+
+async function authFetch(url, options = {}) {
+  const request = (token) =>
+    fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+  let res = await request(getToken());
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken();
+      res = await request(getToken());
+    } catch (err) {
+      clearSession();
+      throw err;
+    }
+
+    if (res.status === 401) {
+      clearSession();
+      throw new Error("Session expired. Please login again.");
+    }
+  }
+
+  return res;
+}
+
 // AUTH
+
 async function login(email, password) {
   const res = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
   });
 
   const data = await res.json();
 
-  return {
-    ok: res.ok,        
-    status: res.status, 
-    ...data
-  };
-}
+  if (res.ok) {
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("refresh_token", data.refresh_token);
+    localStorage.setItem("role", data.role);
+  }
 
+  return { ok: res.ok, status: res.status, ...data };
+}
 
 async function register(email, password) {
   const res = await fetch(`${API_BASE}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
   });
 
   const data = await res.json();
-
-  return {
-    ok: res.ok,          
-    status: res.status, 
-    ...data
-  };
+  return { ok: res.ok, status: res.status, ...data };
 }
 
 async function logout() {
-  const token = localStorage.getItem("access_token");
+  try {
+    const token = localStorage.getItem("access_token");
 
-  await fetch(`${API_BASE}/auth/logout`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`
+    if (token) {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
     }
-  });
-
-  localStorage.removeItem("access_token");
+  } finally {
+    clearSession();
+  }
 }
 
 async function forgotPassword(email) {
   const res = await fetch(`${API_BASE}/auth/forgot-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email })
   });
 
   const data = await res.json();
-
-  return {
-    ok: res.ok,
-    status: res.status,
-    ...data
-  };
+  return { ok: res.ok, status: res.status, ...data };
 }
 
 async function resetPassword(token, password) {
   const res = await fetch(`${API_BASE}/auth/reset-password`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, password })
   });
 
-  const data = await res.json();
-
-  return {
-    ok: res.ok,
-    status: res.status,
-    ...data
-  };
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, ...data };
 }
 
+// COMMON RESPONSE HANDLING
 
-// DASHBOARD 
-async function getDashboard() {
-  const token = localStorage.getItem('access_token');
-  if (!token) throw new Error('No access token found');
+async function apiRequest(url, options = {}) {
+  const res = await authFetch(url, options);
 
-  const res = await fetch(`${API_BASE}/dashboard`, {  
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.msg || 'Failed to fetch dashboard');
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.msg || "API request failed");
   }
+
+  return res;
+}
+
+// DASHBOARD
+
+async function getDashboard() {
+  const res = await apiRequest(`${API_BASE}/dashboard`);
   return res.json();
 }
 
 // PREDICT / UPLOAD FILE
+
 async function uploadFile(file) {
-  const token = localStorage.getItem('access_token');
-  if (!token) throw new Error('Session expired. Please login again.');
-
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
 
-  const res = await fetch(`${API_BASE}/predict/upload`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`
-    },
+  const res = await apiRequest(`${API_BASE}/predict/upload`, {
+    method: "POST",
     body: formData
   });
 
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(data.msg || 'File upload failed');
-  }
-
-  return data;
+  return res.json();
 }
 
-// ===== ADMIN =====
-function getToken() {
-  const token = localStorage.getItem("access_token");
-  if (!token) throw new Error("Session expired");
-  return token;
+async function getPredictionResult(jobId) {
+  const res = await apiRequest(
+    `${API_BASE}/predict/result/${encodeURIComponent(jobId)}`
+  );
+
+  return res.json();
 }
+
+// ADMIN
 
 async function getAdminStats() {
-  const res = await fetch(`${API_BASE}/admin/stats`, {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
-  if (!res.ok) throw new Error("Failed to load stats");
+  const res = await apiRequest(`${API_BASE}/admin/stats`);
   return res.json();
 }
 
 async function getAllUsers() {
-  const res = await fetch(`${API_BASE}/admin/users`, {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
-  if (!res.ok) throw new Error("Failed to load users");
+  const res = await apiRequest(`${API_BASE}/admin/users`);
   return res.json();
 }
 
 async function getAllRecords() {
-  const res = await fetch(`${API_BASE}/admin/records`, {
-    headers: { Authorization: `Bearer ${getToken()}` }
-  });
-  if (!res.ok) throw new Error("Failed to load records");
+  const res = await apiRequest(`${API_BASE}/admin/records`);
   return res.json();
 }
 
 async function apiDeleteUser(userId) {
-  const res = await fetch(`${API_BASE}/admin/users/${userId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${getToken()}` }
+  await apiRequest(`${API_BASE}/admin/users/${userId}`, {
+    method: "DELETE"
   });
-  if (!res.ok) throw new Error("User delete failed");
 }
 
 async function apiDeleteRecord(recordId) {
-  const res = await fetch(`${API_BASE}/admin/records/${recordId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${getToken()}` }
+  await apiRequest(`${API_BASE}/admin/records/${recordId}`, {
+    method: "DELETE"
   });
-  if (!res.ok) throw new Error("Record delete failed");
 }
 
 async function verifyUser(userId, email) {
   if (!confirm(`Verify ${email}?`)) return;
-  await fetch(`${API_BASE}/admin/users/${userId}/verify`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${getToken()}` }
+
+  await apiRequest(`${API_BASE}/admin/users/${userId}/verify`, {
+    method: "POST"
   });
+
   alert(`${email} verified`);
   loadAdmin();
 }
@@ -188,41 +237,33 @@ async function verifyUser(userId, email) {
 async function makeAdmin(userId, email) {
   if (!confirm(`Make ${email} admin?`)) return;
 
-  const res = await fetch(`${API_BASE}/admin/users/${userId}/promote`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${getToken()}` }
+  await apiRequest(`${API_BASE}/admin/users/${userId}/promote`, {
+    method: "POST"
   });
-
-  const data = await res.json();
-  if (!res.ok) return alert(data.msg || "Failed");
 
   alert(`${email} is admin now`);
   loadAdmin();
 }
 
-
 async function demoteAdmin(userId, email) {
   if (!confirm(`Remove admin role from ${email}?`)) return;
 
-  const res = await fetch(`${API_BASE}/admin/users/${userId}/demote`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${getToken()}` }
+  await apiRequest(`${API_BASE}/admin/users/${userId}/demote`, {
+    method: "POST"
   });
-
-  const data = await res.json();
-  if (!res.ok) return alert(data.msg || "Failed");
 
   alert(`${email} is normal user now`);
   loadAdmin();
 }
 
+// ADMIN IMAGE
 
 async function fetchAdminImage(fileId) {
   try {
-    const res = await fetch(`${API_BASE}/predict/file/${fileId}`, {
-      headers: { Authorization: `Bearer ${getToken()}` }
-    });
+    const res = await authFetch(`${API_BASE}/predict/file/${fileId}`);
+
     if (!res.ok) return "placeholder.png";
+
     return URL.createObjectURL(await res.blob());
   } catch {
     return "placeholder.png";

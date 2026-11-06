@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,6 +21,7 @@
           id="email"
           name="email"
           placeholder="Enter your email"
+          autocomplete="email"
           required
         />
 
@@ -29,12 +31,20 @@
           id="password"
           name="password"
           placeholder="Enter a password"
+          autocomplete="new-password"
           required
         />
 
-        <button type="submit">Register</button>
+        <button type="submit" id="register-btn">
+          Register
+        </button>
 
-        <p id="register-message" class="login-message"></p>
+        <p
+          id="register-message"
+          class="login-message"
+          role="status"
+          aria-live="polite"
+        ></p>
       </form>
 
       <div class="links">
@@ -47,6 +57,7 @@
   <script>
     const form = document.getElementById("register-form");
     const messageEl = document.getElementById("register-message");
+    const registerBtn = document.getElementById("register-btn");
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -54,25 +65,43 @@
       messageEl.textContent = "";
       messageEl.style.color = "red";
 
-      const email = form.email.value;
+      const email = form.email.value.trim().toLowerCase();
       const password = form.password.value;
 
-      const res = await register(email, password);
-
-      // SUCCESS (201)
-      if (res.ok && res.status === 201) {
-        messageEl.style.color = "green";
-        messageEl.textContent =
-          res.msg || "Registered successfully. Check your email.";
-
-        setTimeout(() => {
-          window.location.href = "login.html";
-        }, 1500);
+      if (!email || !password) {
+        messageEl.textContent = "Please enter your email and password.";
         return;
       }
 
-      // ERROR (400)
-      messageEl.textContent = res.msg || "Registration failed";
+      registerBtn.disabled = true;
+      registerBtn.textContent = "Registering...";
+
+      try {
+        const res = await register(email, password);
+
+        if (res.ok) {
+          messageEl.style.color = "green";
+          messageEl.textContent =
+            res.msg || "Registered successfully. Check your email.";
+
+          form.reset();
+
+          setTimeout(() => {
+            window.location.href = "login.html";
+          }, 1500);
+
+          return;
+        }
+
+        messageEl.textContent = res.msg || "Registration failed.";
+      } catch (error) {
+        console.error("Registration error:", error);
+        messageEl.textContent =
+          error.message || "Unable to connect to the server. Please try again.";
+      } finally {
+        registerBtn.disabled = false;
+        registerBtn.textContent = "Register";
+      }
     });
   </script>
 </body>

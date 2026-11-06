@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,158 +31,154 @@
       required
     >
 
-    <button type="submit" class="upload-btn">
+    <button type="submit" class="upload-btn" id="upload-btn">
       Upload & Predict
     </button>
 
-    <p id="upload-message" class="upload-message"></p>
+    <p
+      id="upload-message"
+      class="upload-message"
+      role="status"
+      aria-live="polite"
+    ></p>
 
   </form>
 
 </main>
 
 <script>
-
 document.addEventListener("DOMContentLoaded", async () => {
 
-    const token = localStorage.getItem("access_token");
+  const form = document.getElementById("upload-form");
+  const fileInput = document.getElementById("file");
+  const messageEl = document.getElementById("upload-message");
+  const button = document.getElementById("upload-btn");
 
-    if (!token) {
-        window.location.href = "login.html";
-        return;
+  // Authentication Check
+
+  try {
+    getToken();
+  } catch (error) {
+    window.location.replace("login.html");
+    return;
+  }
+
+  // Message Helper
+
+  function showMessage(message, color = "red") {
+    messageEl.style.color = color;
+    messageEl.textContent = message;
+  }
+
+  // Load Navbar
+
+  try {
+    const response = await fetch("_navbar.html");
+
+    if (!response.ok) {
+      throw new Error("Unable to load navigation bar.");
     }
 
-    // -------------------------
-    // Load Navbar
-    // -------------------------
-    try {
+    const navbarHTML = await response.text();
 
-        const navbarHTML =
-            await fetch("_navbar.html")
-            .then(r => r.text());
+    document.getElementById("navbar").innerHTML = navbarHTML;
 
-        document.getElementById("navbar").innerHTML =
-            navbarHTML;
+    const logoutBtn = document.getElementById("logout-btn");
 
-        const logoutBtn =
-            document.getElementById("logout-btn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
 
-        if (logoutBtn) {
-
-            logoutBtn.addEventListener("click", async (e) => {
-
-                e.preventDefault();
-
-                try {
-
-                    await logout();
-
-                } catch (err) {
-
-                    console.error(err);
-
-                } finally {
-
-                    localStorage.removeItem("access_token");
-                    localStorage.removeItem("role");
-                    window.location.href = "login.html";
-
-                }
-
-            });
-
-        }
-
-    } catch (err) {
-
-        console.error("Navbar load failed:", err);
-
-    }
-
-    // -------------------------
-    // Upload
-    // -------------------------
-
-    const form = document.getElementById("upload-form");
-    const messageEl = document.getElementById("upload-message");
-    const button = form.querySelector("button");
-
-    form.addEventListener("submit", async (e) => {
-
-        e.preventDefault();
-
-        messageEl.textContent = "";
-        messageEl.style.color = "red";
-
-        const file = form.file.files[0];
-
-        if (!file) {
-
-            messageEl.textContent =
-                "Please select an image.";
-
-            return;
-
-        }
-
-        button.disabled = true;
-        button.textContent = "Uploading...";
+        logoutBtn.disabled = true;
 
         try {
-
-            const res = await uploadFile(file);
-
-            if (res.job_id) {
-
-                messageEl.style.color = "green";
-                messageEl.textContent =
-                    "Prediction completed. Redirecting...";
-
-                setTimeout(() => {
-
-                    window.location.href =
-                        `result.html?job_id=${res.job_id}`;
-
-                }, 800);
-
-                return;
-
-            }
-
-            messageEl.textContent =
-                res.msg || "Upload failed.";
-
-        } catch (err) {
-
-            console.error(err);
-
-            messageEl.textContent =
-                err.message || "Upload failed.";
-
-            if (
-                err.message &&
-                err.message.toLowerCase().includes("token")
-            ) {
-
-                setTimeout(() => {
-
-                    window.location.href = "login.html";
-
-                }, 1000);
-
-            }
-
-        } finally {
-
-            button.disabled = false;
-            button.textContent = "Upload & Predict";
-
+          await logout();
+        } catch (error) {
+          console.error("Logout error:", error);
+          clearSession();
         }
+      });
+    }
 
-    });
+  } catch (error) {
+    console.error("Navbar loading error:", error);
+    showMessage("Unable to load navigation bar. Please refresh the page.");
+  }
+
+  // Upload X-Ray
+
+  form.addEventListener("submit", async (event) => {
+
+    event.preventDefault();
+
+    showMessage("");
+
+    const file = fileInput.files[0];
+
+    // Validate file selection
+    if (!file) {
+      showMessage("Please select an X-Ray image.");
+      return;
+    }
+
+    // Validate image type
+    if (!file.type || !file.type.startsWith("image/")) {
+      showMessage("Please select a valid image file.");
+      fileInput.value = "";
+      return;
+    }
+
+    // Prevent duplicate uploads
+    button.disabled = true;
+    button.textContent = "Uploading...";
+
+    try {
+
+      // uploadFile() uses apiRequest(), which handles JWT refresh.
+      const response = await uploadFile(file);
+
+      if (response.job_id) {
+
+        showMessage(
+          "Prediction completed. Redirecting...",
+          "green"
+        );
+
+        // Redirect to the result page.
+        const params = new URLSearchParams({
+          job_id: response.job_id
+        });
+
+        setTimeout(() => {
+          window.location.href = `result.html?${params.toString()}`;
+        }, 800);
+
+        return;
+      }
+
+      showMessage(response.msg || "Upload failed. Please try again.");
+
+    } catch (error) {
+
+      console.error("Upload error:", error);
+
+      showMessage(
+        error.message || "Unable to upload the image. Please try again."
+      );
+
+    } finally {
+
+      // Keep button disabled while redirecting.
+      if (!messageEl.textContent.includes("Redirecting")) {
+        button.disabled = false;
+        button.textContent = "Upload & Predict";
+      }
+
+    }
+
+  });
 
 });
-
 </script>
 
 </body>

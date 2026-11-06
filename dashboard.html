@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,141 +8,166 @@
   <link rel="stylesheet" href="css/dashboard.css">
   <script src="js/api.js"></script>
 </head>
+
 <body>
 
   <div id="navbar"></div>
 
   <main class="container">
     <h1>Dashboard</h1>
-    <section id="history"></section>
+    <section id="history">
+      <p>Loading history...</p>
+    </section>
   </main>
 
   <script>
-
-    const token = localStorage.getItem("access_token");
+    "use strict";
 
     // AUTH GUARD
-    if (!token) {
-      window.location.href = "login.html";
+
+    try {
+      getToken();
+    } catch (error) {
+      window.location.replace("login.html");
     }
 
-    // -------------------------
-    // Load Navbar
-    // -------------------------
-    fetch("_navbar.html")
-      .then(r => r.text())
-      .then(html => {
+    // DOM ELEMENTS
 
-        document.getElementById("navbar").innerHTML = html;
+    const historySection = document.getElementById("history");
+    const navbar = document.getElementById("navbar");
+
+    // HTML ESCAPE HELPER
+
+    function escapeHTML(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[char]);
+    }
+
+    // LOAD NAVBAR
+
+    async function loadNavbar() {
+      try {
+        const res = await fetch("_navbar.html");
+
+        if (!res.ok) {
+          throw new Error("Failed to load navbar");
+        }
+
+        navbar.innerHTML = await res.text();
 
         const logoutBtn = document.getElementById("logout-btn");
 
         if (logoutBtn) {
-
           logoutBtn.addEventListener("click", async (e) => {
-
             e.preventDefault();
 
             try {
               await logout();
-            }
-            catch (err) {
-              console.error(err);
-            }
-            finally {
-              localStorage.removeItem("access_token");
-              localStorage.removeItem("role");
-              window.location.href = "login.html";
-            }
+            } catch (error) {
+              console.error("Logout error:", error);
 
+              // Ensure local session is cleared.
+              clearSession();
+            }
           });
-
         }
 
-      });
+      } catch (error) {
+        console.error("Navbar loading error:", error);
+      }
+    }
 
-    // -------------------------
-    // Load Dashboard
-    // -------------------------
+    // LOAD DASHBOARD
+
     async function loadDashboard() {
-
       try {
-
         const data = await getDashboard();
 
-        const section =
-          document.getElementById("history");
+        const records = Array.isArray(data.records)
+          ? data.records
+          : [];
 
-        if (data.records && data.records.length) {
+        if (records.length === 0) {
+          historySection.innerHTML = "<p>No history yet.</p>";
+          return;
+        }
 
-          const cards = data.records.map((rec) => {
+        const cards = records.map(rec => {
 
-            const imgUrl =
-              rec.image_url || "placeholder.png";
+          const imageUrl = escapeHTML(
+            rec.image_url || "placeholder.png"
+          );
 
-            return `
+          const filename = escapeHTML(
+            rec.filename || "Unknown file"
+          );
 
-              <div class="card">
+          const prediction = escapeHTML(
+            rec.prediction || "Unknown"
+          );
 
-                <img
-                  src="${imgUrl}"
-                  alt="X-ray"
+          const probability = Number(rec.probability);
+
+          const safeProbability = Number.isFinite(probability)
+            ? Math.min(100, Math.max(0, probability))
+            : 0;
+
+          const predictionClass =
+            String(rec.prediction || "").toLowerCase() === "positive"
+              ? "positive"
+              : "negative";
+
+          return `
+            <div class="card">
+
+              <img
+                src="${imageUrl}"
+                alt="X-ray"
+                onerror="this.src='placeholder.png'"
+              >
+
+              <p>${filename}</p>
+
+              <p>${prediction}</p>
+
+              <div class="probability-container">
+
+                <div
+                  class="probability-fill ${predictionClass}"
+                  style="width:${safeProbability}%"
                 >
-
-                <p>
-                  ${rec.filename}
-                </p>
-
-                <p>
-                  ${rec.prediction}
-                </p>
-
-                <div class="probability-container">
-
-                  <div
-                    class="probability-fill ${
-                      rec.prediction.toLowerCase() === "positive"
-                        ? "positive"
-                        : "negative"
-                    }"
-                    style="width:${rec.probability}%"
-                  >
-
-                    ${rec.probability}%
-
-                  </div>
-
+                  ${safeProbability}%
                 </div>
 
               </div>
 
-            `;
+            </div>
+          `;
+        });
 
-          });
+        historySection.innerHTML = cards.join("");
 
-          section.innerHTML = cards.join("");
+      } catch (error) {
+        console.error("Dashboard loading error:", error);
 
-        }
-        else {
-
-          section.innerHTML =
-            "<p>No history yet.</p>";
-
-        }
-
+        historySection.innerHTML =
+          "<p>Error loading dashboard. Please try again.</p>";
       }
-      catch (err) {
-
-        console.error(err);
-
-        document.getElementById("history").innerHTML =
-          "<p>Error loading dashboard.</p>";
-
-      }
-
     }
 
-    loadDashboard();
+    // INITIALIZE
+
+    async function initializeDashboard() {
+      await loadNavbar();
+      await loadDashboard();
+    }
+
+    initializeDashboard();
 
   </script>
 

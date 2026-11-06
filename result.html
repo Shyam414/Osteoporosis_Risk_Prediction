@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,6 +7,8 @@
   <title>Prediction Result</title>
 
   <link rel="stylesheet" href="css/result.css">
+
+  <!-- Load api.js synchronously before the inline page script -->
   <script src="js/api.js"></script>
 </head>
 <body>
@@ -14,226 +17,229 @@
 
 <main class="container">
 
-  <p id="result-message" class="result-message"></p>
+  <p
+    id="result-message"
+    class="result-message"
+    role="status"
+    aria-live="polite"
+  ></p>
 
   <section id="result" class="result-box"></section>
 
   <section class="history-section">
-
     <h1>Previous Predictions</h1>
-
     <div id="history" class="history-grid"></div>
-
   </section>
 
 </main>
 
 <script>
+  const messageEl = document.getElementById("result-message");
+  const resultSection = document.getElementById("result");
+  const historySection = document.getElementById("history");
 
-const token = localStorage.getItem("access_token");
+  // Escape values before inserting API data into HTML.
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    })[char]);
+  }
 
-if (!token) {
-    window.location.href = "login.html";
-}
+  // Allow HTTP(S) URLs and relative image paths only.
+  function safeImageURL(value) {
+    const fallback = "placeholder.png";
 
-const messageEl =
-    document.getElementById("result-message");
+    if (typeof value !== "string" || !value.trim()) {
+      return fallback;
+    }
 
-async function initPage() {
+    const url = value.trim();
+
+    if (/^https?:\/\//i.test(url)) {
+      return escapeHTML(url);
+    }
+
+    if (
+      url.startsWith("/") ||
+      url.startsWith("./") ||
+      url.startsWith("../")
+    ) {
+      return escapeHTML(url);
+    }
+
+    return fallback;
+  }
+
+  function getProbability(value) {
+    const probability = Number(value);
+
+    if (!Number.isFinite(probability)) {
+      return 0;
+    }
+
+    return Math.min(100, Math.max(0, probability));
+  }
+
+  function showMessage(message, color = "red") {
+    messageEl.style.color = color;
+    messageEl.textContent = message;
+  }
+
+  // Load navbar and attach logout handler.
+  async function loadNavbar() {
+    const response = await fetch("_navbar.html");
+
+    if (!response.ok) {
+      throw new Error("Unable to load navigation bar.");
+    }
+
+    document.getElementById("navbar").innerHTML =
+      await response.text();
+
+    const logoutBtn = document.getElementById("logout-btn");
+
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
+
+        logoutBtn.disabled = true;
+
+        try {
+          await logout();
+        } catch (error) {
+          console.error("Logout error:", error);
+          clearSession();
+        }
+      });
+    }
+  }
+
+  // Render the latest prediction.
+  function renderPrediction(data) {
+    const probability = getProbability(data.probability);
+
+    const prediction = String(data.prediction || "Unknown");
+    const isPositive = prediction.toLowerCase() === "positive";
+
+    const imageURL = safeImageURL(data.image_url);
+
+    resultSection.innerHTML = `
+      <h2>Prediction Result</h2>
+
+      <div class="prediction-content">
+
+        <img
+          src="${imageURL}"
+          class="prediction-img"
+          alt="X-Ray"
+          onerror="this.onerror=null;this.src='placeholder.png';"
+        >
+
+        <div class="prediction-info">
+
+          <p class="filename">
+            ${escapeHTML(data.filename || "Unknown file")}
+          </p>
+
+          <p class="prediction">
+            <strong>${escapeHTML(prediction)}</strong>
+            <span>(${probability}%)</span>
+          </p>
+
+          <div class="probability-container">
+            <div
+              class="probability-fill ${isPositive ? "positive" : "negative"}"
+              style="width: ${probability}%"
+            >
+              ${probability}%
+            </div>
+          </div>
+
+        </div>
+      </div>
+    `;
+  }
+
+  // Render previous prediction history.
+  function renderHistory(records) {
+    if (!Array.isArray(records) || records.length === 0) {
+      historySection.innerHTML =
+        "<p class='empty'>No history yet.</p>";
+      return;
+    }
+
+    historySection.innerHTML = records.map(record => {
+      const probability = getProbability(record.probability);
+      const imageURL = safeImageURL(record.image_url);
+
+      return `
+        <div class="card">
+
+          <img
+            src="${imageURL}"
+            alt="X-Ray"
+            onerror="this.onerror=null;this.src='placeholder.png';"
+          >
+
+          <p class="filename">
+            ${escapeHTML(record.filename || "Unknown file")}
+          </p>
+
+          <p class="prediction">
+            ${escapeHTML(record.prediction || "Unknown")}
+            (${probability}%)
+          </p>
+
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function initPage() {
+    // Stop initialization if there is no access token.
+    try {
+      getToken();
+    } catch (error) {
+      window.location.replace("login.html");
+      return;
+    }
 
     try {
+      // 1. Load navbar.
+      await loadNavbar();
 
-        // ------------------------
-        // Navbar
-        // ------------------------
+      // 2. Get job ID from URL.
+      const params = new URLSearchParams(window.location.search);
+      const jobId = params.get("job_id");
 
-        const navbarHTML =
-            await fetch("_navbar.html")
-            .then(r => r.text());
+      // 3. Load latest prediction if job ID exists.
+      if (jobId) {
+        const predictionData = await getPredictionResult(jobId);
+        renderPrediction(predictionData);
+      } else {
+        resultSection.innerHTML =
+          "<p class='empty'>No specific prediction selected.</p>";
+      }
 
-        document.getElementById("navbar").innerHTML =
-            navbarHTML;
+      // 4. Load prediction history.
+      const historyData = await getDashboard();
 
-        const logoutBtn =
-            document.getElementById("logout-btn");
+      renderHistory(historyData.records);
 
-        if (logoutBtn) {
+    } catch (error) {
+      console.error("Result page error:", error);
 
-            logoutBtn.addEventListener("click", async e => {
-
-                e.preventDefault();
-
-                try {
-                    await logout();
-                }
-                finally {
-
-                    localStorage.removeItem("access_token");
-                    localStorage.removeItem("role");
-                    window.location.href =
-                        "login.html";
-
-                }
-
-            });
-
-        }
-
-        // ------------------------
-        // Latest Prediction
-        // ------------------------
-
-        const params =
-            new URLSearchParams(window.location.search);
-
-        const job_id =
-            params.get("job_id");
-
-        if (job_id) {
-
-            const res = await fetch(
-
-                `${API_BASE}/predict/result/${job_id}`,
-
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
-                }
-
-            );
-
-            if (!res.ok)
-                throw new Error("Prediction not found");
-
-            const data =
-                await res.json();
-
-            const imgUrl =
-                data.image_url || "placeholder.png";
-
-            document.getElementById("result").innerHTML = `
-
-                <h2>Prediction Result</h2>
-
-                <div class="prediction-content">
-
-                    <img
-                        src="${imgUrl}"
-                        class="prediction-img"
-                        alt="X-Ray"
-                    >
-
-                    <div class="prediction-info">
-
-                        <p class="filename">
-                            ${data.filename}
-                        </p>
-
-                        <p class="prediction">
-
-                            <strong>
-                                ${data.prediction}
-                            </strong>
-
-                            <span>
-                                (${data.probability}%)
-                            </span>
-
-                        </p>
-
-                        <div class="probability-container">
-
-                            <div
-                                class="probability-fill ${
-                                    data.prediction === "Positive"
-                                    ? "positive"
-                                    : "negative"
-                                }"
-                                style="width:${data.probability}%"
-                            >
-
-                                ${data.probability}%
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            `;
-
-        }
-
-        // ------------------------
-        // History
-        // ------------------------
-
-        const history =
-            await getDashboard();
-
-        const historySection =
-            document.getElementById("history");
-
-        if (history.records &&
-            history.records.length) {
-
-            const cards =
-                history.records.map(rec => `
-
-                <div class="card">
-
-                    <img
-                        src="${rec.image_url || "placeholder.png"}"
-                        alt="X-Ray"
-                    >
-
-                    <p class="filename">
-
-                        ${rec.filename}
-
-                    </p>
-
-                    <p class="prediction">
-
-                        ${rec.prediction}
-                        (${rec.probability}%)
-
-                    </p>
-
-                </div>
-
-            `);
-
-            historySection.innerHTML =
-                cards.join("");
-
-        }
-        else {
-
-            historySection.innerHTML =
-                "<p class='empty'>No history yet.</p>";
-
-        }
-
+      showMessage(
+        error.message || "Failed to load prediction results."
+      );
     }
-    catch (err) {
+  }
 
-        console.error(err);
-
-        messageEl.style.color = "red";
-
-        messageEl.textContent =
-            err.message || "Failed to load prediction.";
-
-    }
-
-}
-
-initPage();
-
+  initPage();
 </script>
 
 </body>

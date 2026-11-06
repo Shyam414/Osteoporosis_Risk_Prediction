@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,13 +8,16 @@
   <link rel="stylesheet" href="css/login.css" />
   <script src="js/api.js" defer></script>
 </head>
+
 <body>
   <div class="auth-wrapper">
     <div class="auth-container">
+
       <h2>Welcome Back</h2>
       <p class="subtitle">Sign in to access your dashboard</p>
 
       <form id="login-form">
+
         <label for="email">Email</label>
         <input
           type="email"
@@ -32,54 +36,84 @@
           required
         />
 
-        <button type="submit">Login</button>
+        <button type="submit" id="login-btn">
+          Login
+        </button>
 
-        <p id="login-message" class="login-message"></p>
+        <p
+          id="login-message"
+          class="login-message"
+          role="status"
+          aria-live="polite"
+        ></p>
+
       </form>
 
       <div class="links">
         <span>•</span>
         <a href="forgot.html">Forgot password</a>
+
         <span>•</span>
         <a href="register.html">Create account</a>
+
         <span>•</span>
         <a href="adminlogin.html">Login as Admin</a>
       </div>
+
     </div>
   </div>
 
   <script>
+    "use strict";
+
     const form = document.getElementById("login-form");
     const messageEl = document.getElementById("login-message");
+    const loginBtn = document.getElementById("login-btn");
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      // reset message
+      if (loginBtn.disabled) return;
+
       messageEl.textContent = "";
       messageEl.style.color = "red";
 
-      const email = form.email.value;
+      loginBtn.disabled = true;
+      loginBtn.textContent = "Logging in...";
+
+      const email = form.email.value.trim().toLowerCase();
       const password = form.password.value;
 
-      const res = await login(email, password);
+      try {
+        // Reuse login() from api.js
+        const res = await login(email, password);
 
-      // SUCCESS
-      if (res.ok && res.access_token) {
-        localStorage.setItem("access_token", res.access_token);
-        localStorage.setItem("role", res.role);
-        messageEl.style.color = "green";
-        messageEl.textContent = res.msg || "Login successful";
+        // SUCCESS
+        if (res.ok && res.access_token) {
+          messageEl.style.color = "green";
+          messageEl.textContent =
+            res.msg || "Login successful";
 
-        setTimeout(() => {
           window.location.href = "dashboard.html";
-        }, 800);
-        return;
-      }
+          return;
+        }
 
-      //  ERROR CASES
-      messageEl.textContent = res.msg || "Login failed";
+        // ERROR
+        messageEl.textContent =
+          res.msg || "Login failed";
+
+      } catch (error) {
+        console.error("Login error:", error);
+
+        messageEl.textContent =
+          "Unable to connect to server. Please try again.";
+
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "Login";
+      }
     });
   </script>
+
 </body>
 </html>

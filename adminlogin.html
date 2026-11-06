@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,6 +8,7 @@
   <link rel="stylesheet" href="css/login.css" />
   <script src="js/api.js"></script>
 </head>
+
 <body>
   <div class="auth-wrapper">
     <div class="auth-container">
@@ -14,15 +16,18 @@
       <p class="subtitle">Restricted access</p>
 
       <form id="admin-login-form">
-        <label>Email</label>
+        <label for="email">Email</label>
         <input type="email" id="email" required />
 
-        <label>Password</label>
+        <label for="password">Password</label>
         <input type="password" id="password" required />
 
-        <button type="submit">Login as Admin</button>
+        <button type="submit" id="login-btn">
+          Login as Admin
+        </button>
 
-        <p id="admin-message" class="login-message"></p>
+        <p id="admin-message" class="login-message"
+           role="status" aria-live="polite"></p>
       </form>
 
       <div class="links">
@@ -35,66 +40,84 @@
   <script>
     const form = document.getElementById("admin-login-form");
     const messageEl = document.getElementById("admin-message");
+    const loginBtn = document.getElementById("login-btn");
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
+      if (loginBtn.disabled) return;
+
       messageEl.textContent = "";
       messageEl.style.color = "red";
+      loginBtn.disabled = true;
+      loginBtn.textContent = "Logging in...";
 
-      const email = document.getElementById("email").value.trim().toLowerCase();
+      const email = document.getElementById("email")
+        .value.trim().toLowerCase();
+
       const password = document.getElementById("password").value;
 
-      // 1️ Normal login
-      const res = await login(email, password);
+      try {
+        // 1. Normal login
+        const res = await login(email, password);
 
-      if (!res.ok || !res.access_token) {
-        messageEl.textContent = res.msg || "Login failed";
-        return;
-      }
-
-      // Save token
-      localStorage.setItem("access_token", res.access_token);
-      localStorage.setItem("role", res.role);
-
-      // 2️ Already admin
-      if (res.role === "admin") {
-        messageEl.style.color = "green";
-        messageEl.textContent = "Admin login successful";
-
-        setTimeout(() => {
-          window.location.href = "admin.html";
-        }, 800);
-        return;
-      }
-
-      // 3Try admin bootstrap
-      const bootstrapRes = await fetch(`${API_BASE}/admin/bootstrap`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${res.access_token}`
+        if (!res.ok || !res.access_token) {
+          messageEl.textContent = res.msg || "Login failed";
+          return;
         }
-      });
 
-      const data = await bootstrapRes.json();
+        // 2. Already an admin
+        if (res.role === "admin") {
+          messageEl.style.color = "green";
+          messageEl.textContent = "Admin login successful";
 
-      if (bootstrapRes.ok) {
-        messageEl.style.color = "green";
-        messageEl.textContent = "Admin created successfully. Please login again.";
+          window.location.href = "admin.html";
+          return;
+        }
 
-        localStorage.clear();
+        // 3. Admin bootstrap
+        const bootstrapRes = await fetch(
+          `${API_BASE}/admin/bootstrap`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${res.access_token}`
+            }
+          }
+        );
 
-        setTimeout(() => {
-          window.location.href = "adminlogin.html";
-        }, 1200);
-        return;
+        const data = await bootstrapRes.json().catch(() => ({}));
+
+        if (bootstrapRes.ok) {
+          messageEl.style.color = "green";
+          messageEl.textContent =
+            "Admin created successfully. Please login again.";
+
+          // Remove only authentication data
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          localStorage.removeItem("role");
+
+          setTimeout(() => {
+            window.location.href = "adminlogin.html";
+          }, 1200);
+
+          return;
+        }
+
+        messageEl.textContent =
+          data.msg || "Not an admin account";
+
+      } catch (error) {
+        console.error("Admin login error:", error);
+        messageEl.textContent =
+          "Unable to connect to server. Please try again.";
+
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = "Login as Admin";
       }
-
-      messageEl.textContent = data.msg || "Not an admin account";
     });
-</script>
-
-
-
+  </script>
 </body>
 </html>

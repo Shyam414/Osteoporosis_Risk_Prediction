@@ -5,260 +5,212 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin Dashboard</title>
   <link rel="stylesheet" href="css/admin.css" />
+  <!-- Load api.js before this page's script. -->
   <script src="js/api.js"></script>
 </head>
 <body>
-  <!-- NAVBAR -->
   <header id="navbar"></header>
+
   <main class="container">
     <h1>Admin Dashboard</h1>
     <p class="subtitle">System control panel</p>
-    <p id="admin-message"></p>
-    <!-- =========================
-         STATISTICS
-    ========================== -->
+    <p id="admin-message" role="status" aria-live="polite"></p>
+
     <section class="card">
       <h2>Statistics</h2>
-      <div id="stats">
-        Loading...
-      </div>
+      <div id="stats">Loading...</div>
     </section>
-    <!-- =========================
-         USERS
-    ========================== -->
+
     <section class="card">
       <h2>Users</h2>
-      <label for="roleFilter">
-        <b>Filter Users</b>
-      </label>
+      <label for="roleFilter"><b>Filter Users</b></label>
       <select id="roleFilter">
         <option value="all">Select Admins or Users</option>
         <option value="admin">Admins</option>
         <option value="user">Users</option>
       </select>
-      <div id="users">
-        Please select Admins or Users
-      </div>
+      <div id="users">Please select Admins or Users</div>
     </section>
-    <!-- =========================
-         RECORDS
-    ========================== -->
+
     <section class="card">
       <h2>Records</h2>
-      <label for="userFilter">
-        Select User
-      </label>
+      <label for="userFilter">Select User</label>
       <select id="userFilter">
-        <option value="">
-          -- Select a user --
-        </option>
+        <option value="">-- Select a user --</option>
       </select>
       <div id="records" class="records-grid">
         <p>Select a user to view records</p>
       </div>
     </section>
   </main>
+
   <script>
-    // =====================================
-    // AUTH
-    // =====================================
-    const token = localStorage.getItem("access_token");
+    "use strict";
+
+    // AUTHENTICATION GUARD
+
     const role = localStorage.getItem("role");
-    const msg = document.getElementById("admin-message");
-    // Admin authentication guard
-    if (!token || role !== "admin") {
-      window.location.href = "adminlogin.html";
-    }
-    // =====================================
-    // GLOBAL DATA
-    // =====================================
+    const adminMessage = document.getElementById("admin-message");
+    const statsContainer = document.getElementById("stats");
+    const usersContainer = document.getElementById("users");
+    const recordsContainer = document.getElementById("records");
+    const roleFilter = document.getElementById("roleFilter");
+    const userFilter = document.getElementById("userFilter");
+
     let ALL_USERS = [];
     let ALL_RECORDS = [];
-    // =====================================
-    // NAVBAR
-    // =====================================
-    fetch("_navbar.html")
-      .then(response => response.text())
-      .then(html => {
-        document.getElementById("navbar").innerHTML = html;
-        const logoutBtn =
-          document.getElementById("logout-btn");
-        if (logoutBtn) {
-          logoutBtn.addEventListener(
-            "click",
-            async (event) => {
-              event.preventDefault();
-              try {
-                await logout();
-              }
-              catch (error) {
-                console.error(
-                  "Logout error:",
-                  error
-                );
-              }
-              finally {
-                // Remove all authentication data
-                localStorage.removeItem("access_token");
-                localStorage.removeItem("role");
-                window.location.href ="login.html";}
-            }
-          );
+    let recordsRenderVersion = 0;
+
+    const isAdmin = role === "admin" &&
+      Boolean(localStorage.getItem("access_token"));
+
+    if (!isAdmin) {
+      window.location.replace("adminlogin.html");
+    } else {
+      initializeAdminDashboard();
+    }
+
+    // INITIALIZATION
+
+    async function initializeAdminDashboard() {
+      setupNavbar();
+      setupEventListeners();
+      await loadAdmin();
+    }
+
+    // COMMON UI HELPERS
+
+    function showMessage(message, isError = false) {
+      adminMessage.textContent = message;
+      adminMessage.style.color = isError ? "#e53935" : "#2e7d32";
+    }
+
+    // Escape values before inserting API data into HTML.
+    function escapeHTML(value) {
+      return String(value ?? "").replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[character]);
+    }
+
+    function getUsersForSelectedRole() {
+      const selectedRole = roleFilter.value;
+
+      if (selectedRole !== "admin" && selectedRole !== "user") {
+        return [];
+      }
+
+      return ALL_USERS.filter(user => user.role === selectedRole);
+    }
+
+    // NAVBAR / LOGOUT
+
+    async function setupNavbar() {
+      try {
+        const response = await fetch("_navbar.html");
+
+        if (!response.ok) {
+          throw new Error("Unable to load navbar");
         }
-      })
-      .catch(error => {
-        console.error(
-          "Navbar loading failed:",
-          error
-        );
-      });
-    // =====================================
-    // DELETE USER
-    // =====================================
-    async function uiDeleteUser(
-      userId,
-      email
-    ) {
-      const confirmed = confirm(
-        `Delete user ${email} and ALL records?`
-      );
-      if (!confirmed) {
-        return;
-      }
-      try {
-        await apiDeleteUser(userId);
-        msg.style.color = "#2e7d32";
-        msg.textContent =
-          `User ${email} deleted successfully`;
-        document.getElementById(
-          "userFilter"
-        ).value = "";
-        document.getElementById(
-          "records"
-        ).innerHTML =
-          "<p>Select a user</p>";
-        await loadAdmin();
-      }
-      catch (error) {
-        console.error(error);
-        msg.style.color = "#e53935";
-        msg.textContent =
-          error.message ||
-          "Failed to delete user";
+
+        document.getElementById("navbar").innerHTML =
+          await response.text();
+
+        const logoutButton = document.getElementById("logout-btn");
+
+        if (logoutButton) {
+          logoutButton.addEventListener("click", async event => {
+            event.preventDefault();
+
+            try {
+              // logout() in api.js calls clearSession().
+              await logout();
+            } catch (error) {
+              console.error("Logout error:", error);
+              // Ensure local credentials are cleared even if logout fails.
+              if (typeof clearSession === "function") {
+                clearSession();
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.error("Navbar loading failed:", error);
       }
     }
-    // =====================================
-    // DELETE RECORD
-    // =====================================
-    async function uiDeleteRecord(
-      recordId
-    ) {
-      const confirmed = confirm(
-        "Delete this record and its image?"
-      );
-      if (!confirmed) {
-        return;
-      }
-      try {
-        await apiDeleteRecord(recordId);
-        msg.style.color = "#2e7d32";
-        msg.textContent =
-          "Record deleted successfully";
-        // Reload admin data
-        await loadAdmin();
-      }
-      catch (error) {
-        console.error(error);
-        msg.style.color = "#e53935";
-        msg.textContent =
-          error.message ||
-          "Failed to delete record";
-      }
-    }
-    // =====================================
+
     // LOAD ADMIN DATA
-    // =====================================
+
     async function loadAdmin() {
+      showMessage("");
+
       try {
-        msg.textContent = "";
-        // Load all API data
-        const results =
-          await Promise.all([
-            getAdminStats(),
-            getAllUsers(),
-            getAllRecords()
-          ]);
-        const stats = results[0];
-        ALL_USERS = results[1];
-        ALL_RECORDS = results[2];
-        // -----------------------------
-        // Statistics
-        // -----------------------------
-        document.getElementById(
-          "stats"
-        ).innerHTML = `
-          <div class="stats-grid">
-            <div class="stat">
-              ${stats.total_users}
-              <span>Total Users</span>
-            </div>
-            <div class="stat">
-              ${stats.verified_users}
-              <span>Verified</span>
-            </div>
-            <div class="stat">
-              ${stats.total_records}
-              <span>Records</span>
-            </div>
-          </div>
-        `;
-        // Render UI
+        // These functions use apiRequest/authFetch from api.js.
+        const [stats, users, records] = await Promise.all([
+          getAdminStats(),
+          getAllUsers(),
+          getAllRecords()
+        ]);
+
+        ALL_USERS = Array.isArray(users) ? users : [];
+        ALL_RECORDS = Array.isArray(records) ? records : [];
+
+        renderStats(stats);
+
         renderUsers();
-        renderUserFilter();
-        renderRecords();
-      }
-      catch (error) {
-        console.error(
-          "Admin loading error:",
-          error
-        );
-        msg.style.color = "#e53935";
-        msg.textContent =
-          error.message ||
-          "Failed to load admin panel";
+
+        // Preserve the selected user when data is reloaded,
+        // unless that user is no longer in the filtered list.
+        const previousUserId = userFilter.value;
+        renderUserFilter(previousUserId);
+
+        await renderRecords();
+      } catch (error) {
+        console.error("Admin loading error:", error);
+        showMessage(error.message || "Failed to load admin panel", true);
       }
     }
-    // =====================================
+
+    function renderStats(stats = {}) {
+      statsContainer.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat">
+            ${escapeHTML(stats.total_users ?? 0)}
+            <span>Total Users</span>
+          </div>
+          <div class="stat">
+            ${escapeHTML(stats.verified_users ?? 0)}
+            <span>Verified</span>
+          </div>
+          <div class="stat">
+            ${escapeHTML(stats.total_records ?? 0)}
+            <span>Total Records</span>
+          </div>
+        </div>
+      `;
+    }
+
     // RENDER USERS
-    // =====================================
+
     function renderUsers() {
-      const roleFilter =
-        document.getElementById(
-          "roleFilter"
-        ).value;
-      let users = [];
-      // Show only after selecting a role
-      if (
-        roleFilter === "admin" ||
-        roleFilter === "user"
-      ) {
-        users = ALL_USERS.filter(
-          user => user.role === roleFilter
-        );
-      }
-      if (users.length === 0) {
-        document.getElementById(
-          "users"
-        ).innerHTML = `
-          <p>
-            Please select Admins or Users
-          </p>
-        `;
+      const selectedRole = roleFilter.value;
+
+      if (selectedRole !== "admin" && selectedRole !== "user") {
+        usersContainer.innerHTML = "<p>Please select Admins or Users.</p>";
         return;
       }
-      document.getElementById(
-        "users"
-      ).innerHTML = `
+
+      const users = getUsersForSelectedRole();
+
+      if (users.length === 0) {
+        usersContainer.innerHTML = "<p>No users found for this role.</p>";
+        return;
+      }
+
+      usersContainer.innerHTML = `
         <table>
           <thead>
             <tr>
@@ -269,296 +221,311 @@
             </tr>
           </thead>
           <tbody>
-            ${users.map(user => `
-              <tr>
-                <td>
-                  ${user.email}
-                </td>
-                <td>
-                  ${user.role}
-                </td>
-                <td>
-                  ${user.verified ? "Yes" : "No"}
-                </td>
-                <td>
-                  ${
-                    user.role === "admin"
-                    ?
-                    `
-                        <button
-                            class="warning"
-                            onclick="demoteAdmin('${user._id}', '${user.email}')"
-                        >
-                            Demote
-                        </button>
-                    `
-                    :
-                    `
-                      ${
-                        user.verified
-                        ?
-                        `<button
-                          class="success"
-                          onclick="makeAdmin('${user._id}', '${user.email}')"
-                        >
-                          Make Admin
-                        </button>`
-                        :
-                        `<button
-                          class="success"
-                          onclick="verifyUser('${user._id}', '${user.email}')"
-                        >
-                          Verify
-                        </button>`
-                      }
-                      <button
-                        class="danger"
-                        onclick="uiDeleteUser('${user._id}', '${user.email}')"
-                      >
-                        Delete
-                      </button>
-                    `
-                  }
-                </td>
-              </tr>
-            `).join("")}
+            ${users.map(user => {
+              const id = escapeHTML(user._id);
+              const email = escapeHTML(user.email);
+              const userRole = escapeHTML(user.role);
+
+              let actions = "";
+
+              if (user.role === "admin") {
+                actions = `
+                  <button
+                    type="button"
+                    class="warning"
+                    data-action="demote"
+                    data-user-id="${id}"
+                    data-email="${email}">
+                    Demote
+                  </button>
+                `;
+              } else {
+                actions = user.verified
+                  ? `
+                    <button
+                      type="button"
+                      class="success"
+                      data-action="promote"
+                      data-user-id="${id}"
+                      data-email="${email}">
+                      Make Admin
+                    </button>
+                  `
+                  : `
+                    <button
+                      type="button"
+                      class="success"
+                      data-action="verify"
+                      data-user-id="${id}"
+                      data-email="${email}">
+                      Verify
+                    </button>
+                  `;
+
+                actions += `
+                  <button
+                    type="button"
+                    class="danger"
+                    data-action="delete-user"
+                    data-user-id="${id}"
+                    data-email="${email}">
+                    Delete
+                  </button>
+                `;
+              }
+
+              return `
+                <tr>
+                  <td>${email}</td>
+                  <td>${userRole}</td>
+                  <td>${user.verified ? "Yes" : "No"}</td>
+                  <td>${actions}</td>
+                </tr>
+              `;
+            }).join("")}
           </tbody>
         </table>
       `;
     }
-    // =====================================
-    // RENDER USER SELECT
-    // =====================================
-    function renderUserFilter() {
-      const roleFilter =
-        document.getElementById(
-          "roleFilter"
-        ).value;
-      const select =
-        document.getElementById(
-          "userFilter"
-        );
-      select.innerHTML = `
-        <option value="">
-          -- Select a user --
-        </option>
-      `;
-      if (
-        roleFilter !== "admin" &&
-        roleFilter !== "user"
-      ) {
-        return;
-      }
-      const users =
-        ALL_USERS.filter(
-          user => user.role === roleFilter
-        );
-      select.innerHTML += users
-        .map(user => `
-          <option value="${user._id}">
-            ${user.email}
+
+    // RENDER USER FILTER
+
+    function renderUserFilter(preferredUserId = "") {
+      const users = getUsersForSelectedRole();
+
+      userFilter.innerHTML = `
+        <option value="">-- Select a user --</option>
+        ${users.map(user => `
+          <option value="${escapeHTML(user._id)}">
+            ${escapeHTML(user.email)}
           </option>
-        `)
-        .join("");
-      select.onchange = renderRecords;
+        `).join("")}
+      `;
+
+      const userStillExists = users.some(
+        user => String(user._id) === String(preferredUserId)
+      );
+
+      userFilter.value = userStillExists ? String(preferredUserId) : "";
     }
-    // =====================================
-    // GET IMAGE URL
-    // =====================================
+
+    // USER ACTIONS
+
+    async function handleUserAction(action, userId, email) {
+      const actionDetails = {
+        verify: {
+          url: `/admin/users/${encodeURIComponent(userId)}/verify`,
+          message: `${email} verified successfully`,
+          confirm: `Verify ${email}?`
+        },
+        promote: {
+          url: `/admin/users/${encodeURIComponent(userId)}/promote`,
+          message: `${email} is now an admin`,
+          confirm: `Make ${email} admin?`
+        },
+        demote: {
+          url: `/admin/users/${encodeURIComponent(userId)}/demote`,
+          message: `${email} is now a normal user`,
+          confirm: `Remove admin role from ${email}?`
+        }
+      };
+
+      const details = actionDetails[action];
+      if (!details) return;
+
+      if (!confirm(details.confirm)) return;
+
+      try {
+        await apiRequest(`${API_BASE}${details.url}`, {
+          method: "POST"
+        });
+
+        showMessage(details.message);
+        await loadAdmin();
+      } catch (error) {
+        console.error(`${action} user failed:`, error);
+        showMessage(error.message || `Failed to ${action} user`, true);
+      }
+    }
+
+    async function uiDeleteUser(userId, email) {
+      if (!confirm(`Delete user ${email} and ALL records?`)) return;
+
+      try {
+        await apiDeleteUser(userId);
+
+        userFilter.value = "";
+        recordsContainer.innerHTML = "<p>Select a user to view records</p>";
+
+        showMessage(`User ${email} deleted successfully`);
+        await loadAdmin();
+      } catch (error) {
+        console.error("User deletion failed:", error);
+        showMessage(error.message || "Failed to delete user", true);
+      }
+    }
+
+    // RECORD IMAGE URL
+
     async function getRecordImageUrl(record) {
-      /*
-        Your MongoDB prediction record contains:
-        image_key:
-        users/<user_id>/<job_id>_image.jpg
-        NOT file_id.
-        First use image_url if backend already
-        returned a presigned URL.
-        Otherwise request the image from your
-        admin image API.
-      */
-      // Option 1:
-      // Backend already returned presigned URL
+      // Prefer a presigned URL returned by the backend.
       if (record.image_url) {
         return record.image_url;
       }
-      // Option 2:
-      // Use S3 image_key
-      if (record.image_key) {
-        try {
-          return await fetchAdminImage(
-            record.image_key
-          );
-        }
-        catch (error) {
-          console.error(
-            "Failed to load image using image_key:",
-            error
-          );
-        }
+
+      // Support current S3 image_key records and older file_id records.
+      const imageIdentifier = record.image_key || record.file_id;
+
+      if (!imageIdentifier) {
+        return null;
       }
-      /*
-        Fallback for old records only.
-        If your old database records used file_id,
-        this still supports them.
-      */
-      if (record.file_id) {
-        try {
-          return await fetchAdminImage(
-            record.file_id
-          );
-        }
-        catch (error) {
-          console.error(
-            "Failed to load image using file_id:",
-            error
-          );
-        }
-      }
-      return null;
-    }
-    // =====================================
-    // RENDER RECORDS
-    // =====================================
-    async function renderRecords() {
-      const roleFilter =
-        document.getElementById(
-          "roleFilter"
-        ).value;
-      const userId =
-        document.getElementById(
-          "userFilter"
-        ).value;
-      const grid =
-        document.getElementById(
-          "records"
-        );
-      // Role not selected
-      if (
-        roleFilter !== "admin" &&
-        roleFilter !== "user"
-      ) {
-        grid.innerHTML =
-          "<p>Select Admins or Users first</p>";
-        return;
-      }
-      // User not selected
-      if (!userId) {
-        grid.innerHTML =
-          "<p>Select a user to view records</p>";
-        return;
-      }
-      // Get selected user's records
-      const userRecords =
-        ALL_RECORDS.filter(
-          record => record.user_id === userId
-        );
-      if (!userRecords.length) {
-        grid.innerHTML =
-          "<p>No records found for this user</p>";
-        return;
-      }
-      // Loading message
-      grid.innerHTML =
-        "<p>Loading records...</p>";
+
       try {
-        const cards =
-          await Promise.all(
-            userRecords.map(
-              async record => {
-                let imageUrl = null;
-                try {
-                  imageUrl =
-                    await getRecordImageUrl(
-                      record
-                    );
-                }
-                catch (error) {
-                  console.error(
-                    "Image URL error:",
-                    error
-                  );
-                }
-                return `
-                  <div class="record-card">
-                    ${
-                      imageUrl
-                      ?
-                      `
-                      <img
-                        src="${imageUrl}"
-                        alt="${record.filename || "X-ray image"}"
-                        onerror="
-                          this.style.display='none';
-                          this.nextElementSibling.style.display='block';
-                        "
-                      >
-                      <div
-                        class="image-error"
-                        style="display:none"
-                      >
-                        Image unavailable
-                      </div>
-                      `
-                      :
-                      `
-                      <div class="image-error">
-                        Image unavailable
-                      </div>
-                      `
-                    }
-                    <div class="info">
-                      <b>
-                        ${record.filename || "Unknown file"}
-                      </b>
-                      <p>
-                        ${record.prediction || "Unknown"}
-                        (${record.probability ?? 0}%)
-                      </p>
-                      <p>
-                        Job ID:
-                        ${record.job_id || "N/A"}
-                      </p>
-                      <button
-                        class="danger"
-                        onclick="uiDeleteRecord('${record._id}')"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                `;
-              }
-            )
-          );
-        grid.innerHTML =
-          cards.join("");
-      }
-      catch (error) {
-        console.error(
-          "Record rendering error:",
-          error
-        );
-        grid.innerHTML =
-          "<p>Error loading records.</p>";
+        return await fetchAdminImage(imageIdentifier);
+      } catch (error) {
+        console.error("Failed to load record image:", error);
+        return null;
       }
     }
-    // =====================================
-    // ROLE FILTER CHANGE
-    // =====================================
-    document.getElementById(
-      "roleFilter"
-    ).addEventListener(
-      "change",
-      () => {
+
+    // DELETE RECORD
+
+    async function uiDeleteRecord(recordId) {
+      if (!confirm("Delete this record and its image?")) return;
+
+      try {
+        await apiDeleteRecord(recordId);
+        showMessage("Record deleted successfully");
+        await loadAdmin();
+      } catch (error) {
+        console.error("Record deletion failed:", error);
+        showMessage(error.message || "Failed to delete record", true);
+      }
+    }
+
+    // RENDER RECORDS
+
+    async function renderRecords() {
+      const currentRenderVersion = ++recordsRenderVersion;
+      const selectedRole = roleFilter.value;
+      const selectedUserId = userFilter.value;
+
+      if (selectedRole !== "admin" && selectedRole !== "user") {
+        recordsContainer.innerHTML = "<p>Select Admins or Users first.</p>";
+        return;
+      }
+
+      if (!selectedUserId) {
+        recordsContainer.innerHTML = "<p>Select a user to view records.</p>";
+        return;
+      }
+
+      const userRecords = ALL_RECORDS.filter(
+        record => String(record.user_id) === String(selectedUserId)
+      );
+
+      if (userRecords.length === 0) {
+        recordsContainer.innerHTML = "<p>No records found for this user.</p>";
+        return;
+      }
+
+      recordsContainer.innerHTML = "<p>Loading records...</p>";
+
+      try {
+        const cards = await Promise.all(
+          userRecords.map(async record => {
+            const imageUrl = await getRecordImageUrl(record);
+
+            const filename = escapeHTML(record.filename || "Unknown file");
+            const prediction = escapeHTML(record.prediction || "Unknown");
+            const probability = escapeHTML(record.probability ?? 0);
+            const jobId = escapeHTML(record.job_id || "N/A");
+            const recordId = escapeHTML(record._id);
+
+            const imageMarkup = imageUrl
+              ? `
+                <img
+                  src="${escapeHTML(imageUrl)}"
+                  alt="${filename || "X-ray image"}"
+                  onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+                />
+                <div class="image-error" style="display:none">
+                  Image unavailable
+                </div>
+              `
+              : `
+                <div class="image-error">Image unavailable</div>
+              `;
+
+            return `
+              <div class="record-card">
+                ${imageMarkup}
+                <div class="info">
+                  <b>${filename}</b>
+                  <p>${prediction} (${probability}%)</p>
+                  <p>Job ID: ${jobId}</p>
+                  <button
+                    type="button"
+                    class="danger"
+                    data-action="delete-record"
+                    data-record-id="${recordId}">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            `;
+          })
+        );
+
+        // Do not let an older image request overwrite a newer selection.
+        if (currentRenderVersion !== recordsRenderVersion) return;
+
+        recordsContainer.innerHTML = cards.join("");
+      } catch (error) {
+        if (currentRenderVersion !== recordsRenderVersion) return;
+
+        console.error("Record rendering error:", error);
+        recordsContainer.innerHTML = "<p>Error loading records.</p>";
+      }
+    }
+
+    // EVENT LISTENERS
+
+    function setupEventListeners() {
+      roleFilter.addEventListener("change", async () => {
+        userFilter.value = "";
         renderUsers();
         renderUserFilter();
-        renderRecords();
-      }
-    );
-    // =====================================
-    // INITIAL LOAD
-    // =====================================
-    loadAdmin();
+        await renderRecords();
+      });
+
+      userFilter.addEventListener("change", renderRecords);
+
+      // Event delegation: one listener handles all user action buttons.
+      usersContainer.addEventListener("click", async event => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+
+        const { action, userId, email } = button.dataset;
+
+        if (action === "delete-user") {
+          await uiDeleteUser(userId, email);
+        } else {
+          await handleUserAction(action, userId, email);
+        }
+      });
+
+      // Event delegation for record delete buttons.
+      recordsContainer.addEventListener("click", async event => {
+        const button = event.target.closest(
+          'button[data-action="delete-record"]'
+        );
+
+        if (!button) return;
+
+        await uiDeleteRecord(button.dataset.recordId);
+      });
+    }
   </script>
 </body>
 </html>
